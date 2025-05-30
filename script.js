@@ -116,9 +116,9 @@ class AudioCaptioner {
             
             this.updateCaptionsDisplay('Transcribing audio... This may take a moment.');
             
-            // Transcribe the audio
+            // Transcribe the audio with word-level timestamps
             const result = await this.transcriber(audioBuffer, {
-                return_timestamps: true,
+                return_timestamps: "word",
                 chunk_length_s: 30,
                 stride_length_s: 5,
             });
@@ -186,23 +186,34 @@ class AudioCaptioner {
     processTranscriptionResult(result) {
         if (!result.chunks) return [];
         
-        return result.chunks.map(chunk => ({
-            text: chunk.text.trim(),
-            start: chunk.timestamp[0],
-            end: chunk.timestamp[1]
-        })).filter(caption => caption.text.length > 0);
+        const words = [];
+        result.chunks.forEach(chunk => {
+            if (chunk.timestamp && chunk.timestamp.length >= 2) {
+                words.push({
+                    text: chunk.text.trim(),
+                    start: chunk.timestamp[0],
+                    end: chunk.timestamp[1]
+                });
+            }
+        });
+        
+        return words.filter(word => word.text.length > 0);
     }
     
     updateCurrentCaption() {
         if (this.captions.length === 0) return;
         
         const currentTime = this.audioPlayer.currentTime;
-        const currentCaption = this.captions.find(caption => 
-            currentTime >= caption.start && currentTime <= caption.end
+        
+        // Find all words that should be visible by current time
+        const visibleWords = this.captions.filter(word => 
+            currentTime >= word.start
         );
         
-        if (currentCaption) {
-            this.updateCaptionsDisplay(currentCaption.text);
+        if (visibleWords.length > 0) {
+            // Show all words spoken up to this point
+            const captionText = visibleWords.map(word => word.text).join(' ');
+            this.updateCaptionsDisplay(captionText);
         } else {
             this.updateCaptionsDisplay('');
         }
@@ -219,11 +230,33 @@ class AudioCaptioner {
     }
     
     updateCaptionsHistory() {
-        this.captionsHistory.innerHTML = this.captions
-            .slice(-10) // Show last 10 captions
-            .map(caption => `
+        // Group words into sentences for history display
+        const sentences = [];
+        let currentSentence = [];
+        let sentenceStart = 0;
+        
+        this.captions.forEach((word, index) => {
+            if (currentSentence.length === 0) {
+                sentenceStart = word.start;
+            }
+            currentSentence.push(word.text);
+            
+            // End sentence on punctuation or after 15 words
+            if (word.text.match(/[.!?]$/) || currentSentence.length >= 15 || index === this.captions.length - 1) {
+                sentences.push({
+                    text: currentSentence.join(' '),
+                    start: sentenceStart,
+                    end: word.end
+                });
+                currentSentence = [];
+            }
+        });
+        
+        this.captionsHistory.innerHTML = sentences
+            .slice(-10) // Show last 10 sentences
+            .map(sentence => `
                 <div class="caption-item">
-                    <strong>${this.formatTime(caption.start)} - ${this.formatTime(caption.end)}:</strong> ${caption.text}
+                    <strong>${this.formatTime(sentence.start)} - ${this.formatTime(sentence.end)}:</strong> ${sentence.text}
                 </div>
             `).join('');
         
