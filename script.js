@@ -9,8 +9,7 @@ class AudioCaptioner {
         this.audioPlayer = document.getElementById('audioPlayer');
         this.playPauseBtn = document.getElementById('playPauseBtn');
         this.captionBtn = document.getElementById('captionBtn');
-        this.captionsDisplay = document.getElementById('captionsDisplay'); // Parent container for text and progress bar
-        this.captionTextElement = document.getElementById('captionTextElement'); // The <p> tag for text
+        this.captionsDisplay = document.getElementById('captionsDisplay');
         this.captionsHistory = document.getElementById('captionsHistory');
         this.playerSection = document.getElementById('playerSection');
         this.audioFile = document.getElementById('audioFile');
@@ -29,59 +28,19 @@ class AudioCaptioner {
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
         this.captionBtn.addEventListener('click', () => this.generateCaptions());
         
-        this.audioPlayer.addEventListener('play', () => {
-            this.updatePlayButton(false);
-            if (this.captions.length > 0) {
-                // Prime for caption display or "Listening..."
-                this.setCaptionText('Listening for speech...', 'placeholder');
-            }
-            // updateCurrentCaption will take over on timeupdate
-        });
-        this.audioPlayer.addEventListener('pause', () => {
-            this.updatePlayButton(true);
-            if (this.captions.length > 0 && !this.isProcessing) {
-                const currentText = this.captionTextElement.textContent;
-                if (this.captionTextElement.classList.contains('current-caption') || currentText === 'Listening for speech...') {
-                    const displayText = currentText === 'Listening for speech...' ? '(silence)' : currentText;
-                    this.setCaptionText(`Paused. Current caption: ${displayText}`, 'placeholder');
-                } else {
-                    // If it was showing "Captions generated successfully..." or similar
-                    this.setCaptionText('Paused. Captions are ready.', 'placeholder');
-                }
-            }
-            // If no captions or still processing, existing message should remain.
-        });
-        this.audioPlayer.addEventListener('ended', () => {
-            this.updatePlayButton(true);
-            if (this.captions.length > 0) {
-                this.setCaptionText('Playback finished. Captions are available.', 'placeholder');
-            } else if (this.currentAudioFile) {
-                this.setCaptionText('Upload complete! Click "Generate Captions" to transcribe the audio.', 'placeholder');
-            } else {
-                this.setCaptionText('Captions will appear here when you start the captioning...', 'placeholder');
-            }
-        });
+        this.audioPlayer.addEventListener('play', () => this.updatePlayButton(false));
+        this.audioPlayer.addEventListener('pause', () => this.updatePlayButton(true));
+        this.audioPlayer.addEventListener('ended', () => this.updatePlayButton(true));
         this.audioPlayer.addEventListener('timeupdate', () => this.updateCurrentCaption());
     }
     
     async initializeTranscriber() {
         try {
+            // Initialize the transcription pipeline
             this.transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
         } catch (error) {
             console.error('Failed to initialize transcriber:', error);
-            this.showError('Failed to initialize AI model: ' + error.message);
         }
-    }
-
-    setCaptionText(text, type) { // type is 'caption' or 'placeholder'
-        const targetClass = type === 'caption' ? 'current-caption' : 'placeholder-text';
-
-        if (this.captionTextElement.textContent === text && this.captionTextElement.className === targetClass) {
-            return; // No change needed
-        }
-
-        this.captionTextElement.textContent = text;
-        this.captionTextElement.className = targetClass;
     }
     
     handleFileUpload(event) {
@@ -93,10 +52,12 @@ class AudioCaptioner {
         this.audioPlayer.src = url;
         this.playerSection.classList.add('active');
         
+        // Clear previous captions
         this.captions = [];
-        this.setCaptionText('Upload complete! Click "Generate Captions" to transcribe the audio.', 'placeholder');
+        this.updateCaptionsDisplay('Upload complete! Click "Generate Captions" to transcribe the audio.');
         this.updateCaptionsHistory();
         
+        // Reset caption button
         this.captionBtn.innerHTML = `
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
@@ -104,19 +65,9 @@ class AudioCaptioner {
             Generate Captions
         `;
         this.captionBtn.classList.remove('active', 'processing');
-        this.updatePlayButton(true); // Ensure play button is in 'play' state
-        this.audioPlayer.currentTime = 0; // Reset audio playback position
     }
     
     togglePlayPause() {
-        if (!this.audioPlayer.src || this.audioPlayer.src === window.location.href) { // Check if src is not set or default
-             if(this.currentAudioFile) {
-                this.setCaptionText('Please generate captions first or play if captions are ready.', 'placeholder');
-             } else {
-                this.setCaptionText('Please upload an audio file first.', 'placeholder');
-             }
-            return;
-        }
         if (this.audioPlayer.paused) {
             this.audioPlayer.play();
         } else {
@@ -143,7 +94,6 @@ class AudioCaptioner {
         
         this.isProcessing = true;
         this.captionBtn.classList.add('processing');
-        this.captionBtn.disabled = true;
         this.captionBtn.innerHTML = `
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -152,41 +102,28 @@ class AudioCaptioner {
             Processing...
         `;
         
+        // Add progress bar
         const progressBar = document.createElement('div');
         progressBar.className = 'progress-bar';
-        progressBar.innerHTML = '<div class="progress-fill"></div>'; // Actual fill element for animation
-        // Insert progress bar after the caption text element
-        if(this.captionTextElement.nextSibling) {
-            this.captionsDisplay.insertBefore(progressBar, this.captionTextElement.nextSibling);
-        } else {
-            this.captionsDisplay.appendChild(progressBar);
-        }
-        const progressFill = progressBar.querySelector('.progress-fill');
-
-
+        progressBar.innerHTML = '<div class="progress-fill"></div>';
+        this.captionsDisplay.appendChild(progressBar);
+        
         try {
-            this.setCaptionText('Converting audio file...', 'placeholder');
-            progressFill.style.width = '10%';
+            this.updateCaptionsDisplay('Converting audio file...');
             
+            // Convert audio file to the format expected by the model
             const audioBuffer = await this.convertAudioFile(this.currentAudioFile);
             
-            this.setCaptionText('Transcribing audio... This may take a moment.', 'placeholder');
-            progressFill.style.width = '30%';
+            this.updateCaptionsDisplay('Transcribing audio... This may take a moment.');
             
+            // Transcribe the audio with word-level timestamps
             const result = await this.transcriber(audioBuffer, {
                 return_timestamps: "word",
                 chunk_length_s: 30,
                 stride_length_s: 5,
-                callback_function: (progress) => { // Example of using a progress callback if available
-                    if (progress && progress.length > 0 && progress[0].hasOwnProperty('progress')) {
-                         progressFill.style.width = (30 + progress[0].progress * 0.7) + '%'; // Scale 0-100 to 30-100 range
-                    } else if (progress && progress.status === "progress"){
-                         progressFill.style.width = (30 + progress.progress * 0.7) + '%';
-                    }
-                }
             });
-            progressFill.style.width = '100%';
             
+            // Process the results into timed captions
             this.captions = this.processTranscriptionResult(result);
             
             this.captionBtn.classList.remove('processing');
@@ -198,24 +135,18 @@ class AudioCaptioner {
                 Captions Ready
             `;
             
-            this.setCaptionText('Captions generated successfully! Play the audio to see synchronized captions.', 'placeholder');
+            this.updateCaptionsDisplay('Captions generated successfully! Play the audio to see synchronized captions.');
             this.updateCaptionsHistory();
             
         } catch (error) {
             console.error('Transcription error:', error);
             this.showError('Failed to transcribe audio: ' + error.message);
             this.captionBtn.classList.remove('processing');
-            this.captionBtn.innerHTML = `
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
-                </svg>
-                Generate Captions
-            `;
         } finally {
             this.isProcessing = false;
-            this.captionBtn.disabled = false;
-            const existingProgressBar = this.captionsDisplay.querySelector('.progress-bar');
-            if (existingProgressBar) existingProgressBar.remove();
+            // Remove progress bar
+            const progressBar = this.captionsDisplay.querySelector('.progress-bar');
+            if (progressBar) progressBar.remove();
         }
     }
     
@@ -228,24 +159,21 @@ class AudioCaptioner {
                     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                     
-                    const targetSampleRate = 16000;
-                    if (audioBuffer.sampleRate === targetSampleRate && audioBuffer.numberOfChannels === 1) {
-                        resolve(audioBuffer.getChannelData(0));
-                        return;
-                    }
-
-                    const offlineContext = new OfflineAudioContext(
-                        1, // mono
-                        audioBuffer.duration * targetSampleRate,
-                        targetSampleRate
-                    );
-                    const bufferSource = offlineContext.createBufferSource();
-                    bufferSource.buffer = audioBuffer;
-                    bufferSource.connect(offlineContext.destination);
-                    bufferSource.start();
+                    // Convert to mono and resample to 16kHz (required by Whisper)
+                    const sampleRate = 16000;
+                    const length = Math.floor(audioBuffer.duration * sampleRate);
+                    const result = new Float32Array(length);
                     
-                    const resampledBuffer = await offlineContext.startRendering();
-                    resolve(resampledBuffer.getChannelData(0));
+                    // Get the first channel (mono)
+                    const inputData = audioBuffer.getChannelData(0);
+                    const ratio = inputData.length / length;
+                    
+                    for (let i = 0; i < length; i++) {
+                        const index = Math.floor(i * ratio);
+                        result[i] = inputData[index];
+                    }
+                    
+                    resolve(result);
                 } catch (error) {
                     reject(error);
                 }
@@ -260,7 +188,7 @@ class AudioCaptioner {
         
         const words = [];
         result.chunks.forEach(chunk => {
-            if (chunk.timestamp && chunk.timestamp.length >= 2 && chunk.text.trim()) {
+            if (chunk.timestamp && chunk.timestamp.length >= 2) {
                 words.push({
                     text: chunk.text.trim(),
                     start: chunk.timestamp[0],
@@ -273,30 +201,47 @@ class AudioCaptioner {
     }
     
     updateCurrentCaption() {
-        if (this.audioPlayer.paused || this.audioPlayer.ended || this.isProcessing) {
-            return; // Handled by pause/ended events or processing messages
-        }
-        if (this.captions.length === 0 ) {
-             if (this.currentAudioFile && !this.isProcessing) { // File loaded, but no captions (e.g. not generated yet)
-                // This case might be if play is hit before captions are ready
-                // setCaptionText('Generate captions to see them synchronized.', 'placeholder');
-             }
-             return; // No captions to display
-        }
-
-        const currentTime = this.audioPlayer.currentTime;
-        const visibleWords = this.captions.filter(word => currentTime >= word.start);
+        if (this.captions.length === 0) return;
         
-        if (visibleWords.length > 0) {
+        const currentTime = this.audioPlayer.currentTime;
+        
+        // Find the index of the last word that should be visible
+        let lastWordIndex = -1;
+        for (let i = 0; i < this.captions.length; i++) {
+            if (currentTime >= this.captions[i].start) {
+                lastWordIndex = i;
+            } else {
+                break;
+            }
+        }
+        
+        if (lastWordIndex >= 0) {
+            // Show all words up to the current position
+            const visibleWords = this.captions.slice(0, lastWordIndex + 1);
             const captionText = visibleWords.map(word => word.text).join(' ');
-            this.setCaptionText(captionText, 'caption');
-        } else {
-            // Audio is playing, captions are loaded, but no words for current time (e.g., silence at start)
-            this.setCaptionText('Listening for speech...', 'placeholder');
+            
+            // Only update if the text has actually changed
+            const currentDisplayText = this.captionsDisplay.querySelector('.current-caption')?.textContent || '';
+            if (currentDisplayText !== captionText) {
+                this.updateCaptionsDisplay(captionText);
+            }
+        } else if (!this.captionsDisplay.querySelector('.current-caption')) {
+            this.updateCaptionsDisplay('');
         }
     }
-        
+    
+    updateCaptionsDisplay(text) {
+        if (text.trim()) {
+            this.captionsDisplay.innerHTML = `<p class="current-caption">${text}</p>`;
+        } else if (this.captions.length === 0) {
+            this.captionsDisplay.innerHTML = '<p class="placeholder-text">Captions will appear here when you start the captioning...</p>';
+        } else {
+            this.captionsDisplay.innerHTML = '<p class="placeholder-text">Listening for speech...</p>';
+        }
+    }
+    
     updateCaptionsHistory() {
+        // Group words into sentences for history display
         const sentences = [];
         let currentSentence = [];
         let sentenceStart = 0;
@@ -307,6 +252,7 @@ class AudioCaptioner {
             }
             currentSentence.push(word.text);
             
+            // End sentence on punctuation or after 15 words
             if (word.text.match(/[.!?]$/) || currentSentence.length >= 15 || index === this.captions.length - 1) {
                 sentences.push({
                     text: currentSentence.join(' '),
@@ -318,13 +264,14 @@ class AudioCaptioner {
         });
         
         this.captionsHistory.innerHTML = sentences
-            .slice(-10) 
+            .slice(-10) // Show last 10 sentences
             .map(sentence => `
-                <div class="caption-item" data-start="${sentence.start}">
+                <div class="caption-item">
                     <strong>${this.formatTime(sentence.start)} - ${this.formatTime(sentence.end)}:</strong> ${sentence.text}
                 </div>
             `).join('');
         
+        // Scroll to bottom
         this.captionsHistory.scrollTop = this.captionsHistory.scrollHeight;
     }
     
@@ -335,11 +282,12 @@ class AudioCaptioner {
     }
     
     showError(message) {
-        this.setCaptionText(`Error: ${message}`, 'placeholder');
+        this.updateCaptionsDisplay(`Error: ${message}`);
         console.error(message);
     }
 }
 
+// Initialize the application when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new AudioCaptioner();
 });
