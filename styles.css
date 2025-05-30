@@ -139,6 +139,15 @@ body {
     box-shadow: 0 0 20px rgba(255, 152, 0, 0.5);
 }
 
+.download-btn {
+    background: #2196F3;
+}
+
+.download-btn:hover {
+    background: #1976D2;
+    box-shadow: 0 0 20px rgba(33, 150, 243, 0.5);
+}
+
 .progress-bar {
     width: 100%;
     height: 6px;

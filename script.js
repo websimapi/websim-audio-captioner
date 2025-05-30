@@ -13,6 +13,7 @@ class AudioCaptioner {
         this.captionsHistory = document.getElementById('captionsHistory');
         this.playerSection = document.getElementById('playerSection');
         this.audioFile = document.getElementById('audioFile');
+        this.downloadBtn = document.getElementById('downloadBtn');
         
         this.transcriber = null;
         this.isProcessing = false;
@@ -27,6 +28,7 @@ class AudioCaptioner {
         this.audioFile.addEventListener('change', (e) => this.handleFileUpload(e));
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
         this.captionBtn.addEventListener('click', () => this.generateCaptions());
+        this.downloadBtn.addEventListener('click', () => this.downloadCaptions());
         
         this.audioPlayer.addEventListener('play', () => this.updatePlayButton(false));
         this.audioPlayer.addEventListener('pause', () => this.updatePlayButton(true));
@@ -57,7 +59,7 @@ class AudioCaptioner {
         this.updateCaptionsDisplay('Upload complete! Click "Generate Captions" to transcribe the audio.');
         this.updateCaptionsHistory();
         
-        // Reset caption button
+        // Reset caption button and hide download button
         this.captionBtn.innerHTML = `
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
@@ -65,6 +67,7 @@ class AudioCaptioner {
             Generate Captions
         `;
         this.captionBtn.classList.remove('active', 'processing');
+        this.downloadBtn.style.display = 'none';
     }
     
     togglePlayPause() {
@@ -140,6 +143,9 @@ class AudioCaptioner {
             
             this.updateCaptionsDisplay('Captions generated successfully! Play the audio to see synchronized captions.');
             this.updateCaptionsHistory();
+            
+            // Show download button
+            this.downloadBtn.style.display = 'flex';
             
         } catch (error) {
             console.error('Transcription error:', error);
@@ -302,6 +308,62 @@ class AudioCaptioner {
     showError(message) {
         this.updateCaptionsDisplay(`Error: ${message}`);
         console.error(message);
+    }
+    
+    downloadCaptions() {
+        if (this.captions.length === 0) return;
+        
+        // Convert captions to SRT format
+        const srtContent = this.generateSRTContent();
+        
+        // Create and download file
+        const blob = new Blob([srtContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${this.currentAudioFile.name.split('.')[0]}_captions.srt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    generateSRTContent() {
+        // Group words into sentences for SRT format
+        const sentences = [];
+        let currentSentence = [];
+        let sentenceStart = 0;
+        let sentenceIndex = 1;
+        
+        this.captions.forEach((word, index) => {
+            if (currentSentence.length === 0) {
+                sentenceStart = word.start;
+            }
+            currentSentence.push(word.text);
+            
+            // End sentence on punctuation or after 10 words
+            if (word.text.match(/[.!?]$/) || currentSentence.length >= 10 || index === this.captions.length - 1) {
+                const startTime = this.formatSRTTime(sentenceStart);
+                const endTime = this.formatSRTTime(word.end);
+                const text = currentSentence.join(' ');
+                
+                sentences.push(`${sentenceIndex}\n${startTime} --> ${endTime}\n${text}\n`);
+                
+                currentSentence = [];
+                sentenceIndex++;
+            }
+        });
+        
+        return sentences.join('\n');
+    }
+    
+    formatSRTTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        const milliseconds = Math.floor((seconds % 1) * 1000);
+        
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
     }
 }
 
