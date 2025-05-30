@@ -173,24 +173,33 @@ body {
     font-size: 1.2rem;
     line-height: 1.6;
     display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.placeholder-text {
-    color: rgba(255, 255, 255, 0.6);
-    font-style: italic;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    text-align: left;
 }
 
 .current-caption {
     color: #fff;
     font-weight: 500;
-    animation: fadeIn 0.5s ease;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    width: 100%;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+.caption-word {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: wordAppear 0.5s ease forwards;
+    display: inline-block;
+}
+
+@keyframes wordAppear {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .captions-history {

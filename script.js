@@ -92,6 +92,9 @@ class AudioCaptioner {
             return;
         }
         
+        // Clear previous captions display
+        this.captionsDisplay.innerHTML = '';
+        
         this.isProcessing = true;
         this.captionBtn.classList.add('processing');
         this.captionBtn.innerHTML = `
@@ -216,27 +219,42 @@ class AudioCaptioner {
         }
         
         if (lastWordIndex >= 0) {
-            // Show all words up to the current position
-            const visibleWords = this.captions.slice(0, lastWordIndex + 1);
-            const captionText = visibleWords.map(word => word.text).join(' ');
+            // Check if we need to add more words
+            const currentWordCount = this.captionsDisplay.querySelectorAll('.caption-word').length;
+            const shouldShowWords = lastWordIndex + 1;
             
-            // Only update if the text has actually changed
-            const currentDisplayText = this.captionsDisplay.querySelector('.current-caption')?.textContent || '';
-            if (currentDisplayText !== captionText) {
-                this.updateCaptionsDisplay(captionText);
+            if (shouldShowWords > currentWordCount) {
+                // Add new words one by one
+                for (let i = currentWordCount; i < shouldShowWords; i++) {
+                    this.addWordToDisplay(this.captions[i].text);
+                }
             }
-        } else if (!this.captionsDisplay.querySelector('.current-caption')) {
-            this.updateCaptionsDisplay('');
         }
     }
     
+    addWordToDisplay(word) {
+        let currentCaptionDiv = this.captionsDisplay.querySelector('.current-caption');
+        
+        if (!currentCaptionDiv) {
+            currentCaptionDiv = document.createElement('div');
+            currentCaptionDiv.className = 'current-caption';
+            this.captionsDisplay.innerHTML = '';
+            this.captionsDisplay.appendChild(currentCaptionDiv);
+        }
+        
+        const wordSpan = document.createElement('span');
+        wordSpan.className = 'caption-word';
+        wordSpan.textContent = word;
+        currentCaptionDiv.appendChild(wordSpan);
+    }
+    
     updateCaptionsDisplay(text) {
-        if (text.trim()) {
-            this.captionsDisplay.innerHTML = `<p class="current-caption">${text}</p>`;
-        } else if (this.captions.length === 0) {
-            this.captionsDisplay.innerHTML = '<p class="placeholder-text">Captions will appear here when you start the captioning...</p>';
+        if (text.trim() && !text.includes('Error:') && !text.includes('generated successfully') && !text.includes('Converting') && !text.includes('Transcribing') && !text.includes('Upload complete')) {
+            // For live captions, don't replace - words are added individually
+            return;
         } else {
-            this.captionsDisplay.innerHTML = '<p class="placeholder-text">Listening for speech...</p>';
+            // For status messages, replace content
+            this.captionsDisplay.innerHTML = `<p class="placeholder-text">${text || 'Captions will appear here when you start the captioning...'}</p>`;
         }
     }
     
