@@ -30,11 +30,24 @@
                 </svg>
                 Choose Audio File
             </label>
+            <input type="file" id="captionFile" accept=".srt" class="file-input">
+            <label for="captionFile" class="upload-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                </svg>
+                Load Captions (.SRT)
+            </label>
         </div>
 
         <div class="player-section" id="playerSection">
             <audio id="audioPlayer" controls></audio>
             <div class="controls">
+                <button id="replayBtn" class="control-btn" style="display: none;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 11a8.1 8.1 0 0 0-15.5 2M4 13h4V9"></path>
+                        <path d="M4 13a8.1 8.1 0 0 0 15.5-2M20 11h-4v4"></path>
+                    </svg>
+                </button>
                 <button id="playPauseBtn" class="control-btn">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="5,3 19,12 5,21"></polygon>

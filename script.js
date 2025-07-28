@@ -13,11 +13,14 @@ class AudioCaptioner {
         this.captionsHistory = document.getElementById('captionsHistory');
         this.playerSection = document.getElementById('playerSection');
         this.audioFile = document.getElementById('audioFile');
+        this.captionFile = document.getElementById('captionFile');
         this.downloadBtn = document.getElementById('downloadBtn');
+        this.replayBtn = document.getElementById('replayBtn');
         
         this.transcriber = null;
         this.isProcessing = false;
         this.captions = [];
+        this.captionType = 'word'; // 'word' or 'sentence'
         this.currentAudioFile = null;
         
         this.initializeEventListeners();
@@ -26,9 +29,11 @@ class AudioCaptioner {
     
     initializeEventListeners() {
         this.audioFile.addEventListener('change', (e) => this.handleFileUpload(e));
+        this.captionFile.addEventListener('change', (e) => this.handleCaptionUpload(e));
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
         this.captionBtn.addEventListener('click', () => this.generateCaptions());
         this.downloadBtn.addEventListener('click', () => this.downloadCaptions());
+        this.replayBtn.addEventListener('click', () => this.replay());
         
         this.audioPlayer.addEventListener('play', () => this.updatePlayButton(false));
         this.audioPlayer.addEventListener('pause', () => this.updatePlayButton(true));
@@ -56,7 +61,8 @@ class AudioCaptioner {
         
         // Clear previous captions
         this.captions = [];
-        this.updateCaptionsDisplay('Upload complete! Click "Generate Captions" to transcribe the audio.');
+        this.captionType = 'word';
+        this.updateCaptionsDisplay('Upload complete! Click "Generate Captions" or "Load Captions" to start.');
         this.updateCaptionsHistory();
         
         // Reset caption button and hide download button
@@ -67,7 +73,72 @@ class AudioCaptioner {
             Generate Captions
         `;
         this.captionBtn.classList.remove('active', 'processing');
+        this.captionBtn.disabled = false;
         this.downloadBtn.style.display = 'none';
+        this.replayBtn.style.display = 'none';
+    }
+
+    async handleCaptionUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!this.currentAudioFile) {
+            this.showError('Please upload an audio file first before loading captions.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const srtContent = e.target.result;
+                this.captions = this.parseSRT(srtContent);
+                this.captionType = 'sentence';
+                
+                this.updateCaptionsDisplay('SRT captions loaded. Play the audio to see them.');
+                this.updateCaptionsHistory();
+                
+                this.captionBtn.classList.add('active');
+                this.captionBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"></path>
+                    </svg>
+                    Captions Loaded
+                `;
+                this.captionBtn.disabled = true; // Disable generation if SRT is loaded
+                this.downloadBtn.style.display = 'none'; // Hide download for loaded SRT
+                this.replayBtn.style.display = 'flex';
+            } catch (error) {
+                this.showError('Failed to parse SRT file: ' + error.message);
+                console.error(error);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    parseSRT(srtContent) {
+        const lines = srtContent.replace(/\r/g, '').split('\n\n');
+        const captions = [];
+
+        const timeToSeconds = (time) => {
+            const parts = time.split(/[:,]/);
+            return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]) + parseInt(parts[3]) / 1000;
+        };
+
+        for (const line of lines) {
+            if (line.trim() === '') continue;
+            const parts = line.split('\n');
+            if (parts.length < 3) continue;
+
+            const timeMatch = parts[1].match(/(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/);
+            if (timeMatch) {
+                captions.push({
+                    start: timeToSeconds(timeMatch[1]),
+                    end: timeToSeconds(timeMatch[2]),
+                    text: parts.slice(2).join(' ')
+                });
+            }
+        }
+        return captions;
     }
     
     togglePlayPause() {
@@ -146,6 +217,7 @@ class AudioCaptioner {
             
             // Show download button
             this.downloadBtn.style.display = 'flex';
+            this.replayBtn.style.display = 'flex';
             
         } catch (error) {
             console.error('Transcription error:', error);
@@ -212,6 +284,14 @@ class AudioCaptioner {
     updateCurrentCaption() {
         if (this.captions.length === 0) return;
         
+        if (this.captionType === 'word') {
+            this.updateWordByWordCaption();
+        } else {
+            this.updateSentenceCaption();
+        }
+    }
+
+    updateWordByWordCaption() {
         const currentTime = this.audioPlayer.currentTime;
         
         // Find the index of the last word that should be visible
@@ -237,6 +317,31 @@ class AudioCaptioner {
             }
         }
     }
+
+    updateSentenceCaption() {
+        const currentTime = this.audioPlayer.currentTime;
+        let activeCaption = null;
+
+        for (const caption of this.captions) {
+            if (currentTime >= caption.start && currentTime <= caption.end) {
+                activeCaption = caption;
+                break;
+            }
+        }
+
+        let captionContainer = this.captionsDisplay.querySelector('.current-caption');
+        if (!captionContainer) {
+            this.captionsDisplay.innerHTML = '';
+            captionContainer = document.createElement('div');
+            captionContainer.className = 'current-caption';
+            this.captionsDisplay.appendChild(captionContainer);
+        }
+
+        const newText = activeCaption ? activeCaption.text : '';
+        if (captionContainer.textContent !== newText) {
+            captionContainer.textContent = newText;
+        }
+    }
     
     addWordToDisplay(word) {
         let currentCaptionDiv = this.captionsDisplay.querySelector('.current-caption');
@@ -255,7 +360,7 @@ class AudioCaptioner {
     }
     
     updateCaptionsDisplay(text) {
-        if (text.trim() && !text.includes('Error:') && !text.includes('generated successfully') && !text.includes('Converting') && !text.includes('Transcribing') && !text.includes('Upload complete')) {
+        if (this.captionType === 'word' && text.trim() && !text.includes('Error:') && !text.includes('generated successfully') && !text.includes('Converting') && !text.includes('Transcribing') && !text.includes('Upload complete')) {
             // For live captions, don't replace - words are added individually
             return;
         } else {
@@ -265,27 +370,37 @@ class AudioCaptioner {
     }
     
     updateCaptionsHistory() {
-        // Group words into sentences for history display
-        const sentences = [];
-        let currentSentence = [];
-        let sentenceStart = 0;
-        
-        this.captions.forEach((word, index) => {
-            if (currentSentence.length === 0) {
-                sentenceStart = word.start;
-            }
-            currentSentence.push(word.text);
+        if (this.captions.length === 0) {
+            this.captionsHistory.innerHTML = '';
+            return;
+        }
+
+        let sentences;
+        if (this.captionType === 'word') {
+            sentences = [];
+            let currentSentence = [];
+            let sentenceStart = 0;
             
-            // End sentence on punctuation or after 15 words
-            if (word.text.match(/[.!?]$/) || currentSentence.length >= 15 || index === this.captions.length - 1) {
-                sentences.push({
-                    text: currentSentence.join(' '),
-                    start: sentenceStart,
-                    end: word.end
-                });
-                currentSentence = [];
-            }
-        });
+            this.captions.forEach((word, index) => {
+                if (currentSentence.length === 0) {
+                    sentenceStart = word.start;
+                }
+                currentSentence.push(word.text);
+                
+                // End sentence on punctuation or after 15 words
+                if (word.text.match(/[.!?]$/) || currentSentence.length >= 15 || index === this.captions.length - 1) {
+                    sentences.push({
+                        text: currentSentence.join(' '),
+                        start: sentenceStart,
+                        end: word.end
+                    });
+                    currentSentence = [];
+                }
+            });
+        } else {
+            // For SRT, captions are already sentences
+            sentences = this.captions;
+        }
         
         this.captionsHistory.innerHTML = sentences
             .slice(-10) // Show last 10 sentences
@@ -310,8 +425,17 @@ class AudioCaptioner {
         console.error(message);
     }
     
+    replay() {
+        this.audioPlayer.currentTime = 0;
+        this.audioPlayer.play();
+        this.captionsDisplay.innerHTML = '';
+        if (this.captionType === 'sentence') {
+            this.updateSentenceCaption();
+        }
+    }
+    
     downloadCaptions() {
-        if (this.captions.length === 0) return;
+        if (this.captions.length === 0 || this.captionType !== 'word') return;
         
         // Convert captions to SRT format
         const srtContent = this.generateSRTContent();

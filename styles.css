@@ -41,6 +41,10 @@ body {
 .upload-section {
     margin-bottom: 2rem;
     text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
 }
 
 .file-input {
